@@ -1,0 +1,21 @@
+{
+  "name": "Meitav & Jordan's Henna",
+  "short_name": "Henna App",
+  "description": "Welcome to the Henna app, where you can share all your photos and view them in real time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fffbeb",
+  "theme_color": "#b45309",
+  "icons": [
+    {
+      "src": "/favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap');
+
+body {
+  font-family: 'Montserrat', sans-serif;
+  @apply bg-gradient-to-br from-rose-50 via-amber-50 to-rose-50 text-stone-800 min-h-screen;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Cormorant Garamond', serif;
+  @apply font-medium;
+}
+
+/* Custom animations */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Decorative elements */
+.decorative-line {
+  @apply relative;
+}
+
+.decorative-line::before, .decorative-line::after {
+  content: "";
+  @apply absolute h-px bg-amber-300 top-1/2 w-16 hidden md:block;
+}
+
+.decorative-line::before {
+  @apply -left-20;
+}
+
+.decorative-line::after {
+  @apply -right-20;
+}
+
+/* Custom button styles */
+.btn-primary {
+  @apply bg-gradient-to-r from-amber-500 to-rose-400 hover:from-amber-600 hover:to-rose-500 text-white font-medium py-3 px-6 rounded-full shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105;
+}
+
+.btn-secondary {
+  @apply bg-white bg-opacity-80 hover:bg-opacity-100 text-amber-700 font-medium py-3 px-6 rounded-full shadow-md hover:shadow-lg border border-amber-200 transition-all duration-300 transform hover:scale-105;
+}
+
+/* Modal styling */
+[role="dialog"] {
+  @apply backdrop-blur-sm;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-amber-50;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-amber-300 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-amber-400;
+}
+
+/* Gallery card hover effect */
+.gallery-card {
+  @apply transition-all duration-300 overflow-hidden;
+}
+
+.gallery-card:hover img {
+  @apply scale-105 transition-all duration-500;
+}
