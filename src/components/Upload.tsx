@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { X, Upload, ImageOff, Check, Trash2, Plus } from 'lucide-react';
-import { uploadPhotoViaEdgeFunction } from '../lib/supabase';
+import { uploadPhotoViaEdgeFunction, uploadPhoto } from '../lib/supabase';
 
 interface UploadComponentProps {
   onClose: () => void;
@@ -12,6 +12,9 @@ interface FileWithPreview {
   preview: string;
   comment: string;
   id: string;
+  status?: 'pending' | 'uploading' | 'success' | 'error';
+  progress?: number;
+  error?: string;
 }
 
 const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploaded }) => {
@@ -73,7 +76,9 @@ const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploa
             file,
             preview: event.target.result,
             comment: '',
-            id
+            id,
+            status: 'pending',
+            progress: 0
           });
           
           // Only update state after all files are processed
@@ -115,6 +120,15 @@ const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploa
     }
   };
 
+  const updateFileStatus = (id: string, updates: Partial<FileWithPreview>) => {
+    setSelectedFiles(prev => 
+      prev.map(file => 
+        file.id === id ? { ...file, ...updates } : file
+      )
+    );
+  };
+
+  // VOICI LA FONCTION MODIFIÉE
   const handleSubmit = async () => {
     if (selectedFiles.length === 0) {
       setError('Please select at least one image to upload.');
@@ -124,29 +138,106 @@ const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploa
     setIsUploading(true);
     setError(null);
     
+    let successCount = 0;
+    
     try {
-      // Upload each file
-      const uploadPromises = selectedFiles.map(async ({ file, comment }) => {
+      // Process each file sequentially to avoid overwhelming the server
+      for (const fileItem of selectedFiles) {
         try {
-          await uploadPhotoViaEdgeFunction(file, comment);
-          return true;
-        } catch (error) {
-          console.error(`Error uploading ${file.name}:`, error);
-          return false;
+          console.log(`Starting upload for ${fileItem.file.name}, size: ${fileItem.file.size}, type: ${fileItem.file.type}`);
+          updateFileStatus(fileItem.id, { status: 'uploading', progress: 10 });
+          
+          // Convertir l'image en JPEG comme dans CameraComponent
+          // Le code ci-dessous convertit l'image en format jpg via un canvas
+          const img = new Image();
+          img.src = fileItem.preview;
+          
+          await new Promise<void>((resolve, reject) => {
+            img.onload = async () => {
+              try {
+                // Créer un canvas pour la conversion
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                if (!ctx) {
+                  reject(new Error('Failed to get canvas context'));
+                  return;
+                }
+                
+                // Définir les dimensions du canvas
+                canvas.width = img.width;
+                canvas.height = img.height;
+                
+                // Dessiner l'image sur le canvas
+                ctx.drawImage(img, 0, 0);
+                
+                // Convertir en blob JPEG avec une qualité de 90%
+                canvas.toBlob(
+                  async (blob) => {
+                    if (!blob) {
+                      reject(new Error('Failed to create blob'));
+                      return;
+                    }
+                    
+                    // Créer un fichier à partir du blob
+                    const convertedFile = new File(
+                      [blob], 
+                      `converted_${fileItem.file.name.split('.')[0]}.jpg`, 
+                      { type: 'image/jpeg' }
+                    );
+                    
+                    console.log(`Converted file: ${convertedFile.name}, size: ${convertedFile.size}, type: ${convertedFile.type}`);
+                    updateFileStatus(fileItem.id, { progress: 30 });
+                    
+                    try {
+                      // Utiliser uniquement uploadPhotoViaEdgeFunction comme dans CameraComponent
+                      await uploadPhotoViaEdgeFunction(convertedFile, fileItem.comment);
+                      console.log(`Upload success for ${convertedFile.name}`);
+                      updateFileStatus(fileItem.id, { progress: 100, status: 'success' });
+                      successCount++;
+                      resolve();
+                    } catch (uploadError) {
+                      console.error('Upload error:', uploadError);
+                      reject(uploadError);
+                    }
+                  },
+                  'image/jpeg',
+                  0.9  // qualité de 90%
+                );
+              } catch (error) {
+                reject(error);
+              }
+            };
+            
+            img.onerror = () => {
+              reject(new Error(`Failed to load image: ${fileItem.file.name}`));
+            };
+          });
+        } catch (error: any) {
+          console.error(`Error processing ${fileItem.file.name}:`, error);
+          updateFileStatus(fileItem.id, { 
+            status: 'error', 
+            error: error.message || 'Upload failed' 
+          });
         }
-      });
-      
-      const results = await Promise.all(uploadPromises);
-      const successCount = results.filter(Boolean).length;
+      }
       
       if (successCount === 0) {
         throw new Error('Failed to upload any photos. Please try again.');
       } else if (successCount < selectedFiles.length) {
         setError(`Only ${successCount} out of ${selectedFiles.length} photos were uploaded successfully.`);
+        // Wait a moment to show the status before closing
+        setTimeout(() => {
+          onPhotoUploaded(successCount);
+          onClose();
+        }, 2000);
+      } else {
+        // All uploads successful
+        setTimeout(() => {
+          onPhotoUploaded(successCount);
+          onClose();
+        }, 1000);
       }
-      
-      onPhotoUploaded(successCount);
-      onClose();
     } catch (error: any) {
       console.error('Error uploading photos:', error);
       setError(error.message || 'Failed to upload photos. Please try again.');
@@ -163,6 +254,7 @@ const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploa
             onClick={onClose}
             className="p-1.5 rounded-full hover:bg-amber-600 transition-colors"
             aria-label="Close upload"
+            disabled={isUploading}
           >
             <X size={20} />
           </button>
@@ -189,7 +281,7 @@ const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploa
               className="hidden"
             />
             
-            {selectedFiles.length < MAX_FILES && (
+            {selectedFiles.length < MAX_FILES && !isUploading && (
               <button
                 onClick={triggerFileInput}
                 className="w-full py-3 border-2 border-dashed border-amber-300 rounded-lg flex items-center justify-center text-amber-600 hover:bg-amber-50 transition-colors"
@@ -203,9 +295,16 @@ const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploa
           {selectedFiles.length > 0 ? (
             <div className="space-y-4">
               {selectedFiles.map((fileItem) => (
-                <div key={fileItem.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                <div 
+                  key={fileItem.id} 
+                  className={`border rounded-lg overflow-hidden ${
+                    fileItem.status === 'success' ? 'border-green-200 bg-green-50' : 
+                    fileItem.status === 'error' ? 'border-red-200 bg-red-50' : 
+                    'border-gray-200'
+                  }`}
+                >
                   <div className="flex">
-                    <div className="w-32 h-32 flex-shrink-0 bg-gray-100">
+                    <div className="w-32 h-32 flex-shrink-0 bg-gray-100 relative">
                       <img 
                         src={fileItem.preview} 
                         alt="Preview" 
@@ -219,6 +318,19 @@ const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploa
                           target.parentElement?.appendChild(icon);
                         }}
                       />
+                      
+                      {/* Status indicator */}
+                      {fileItem.status === 'uploading' && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      )}
+                      
+                      {fileItem.status === 'success' && (
+                        <div className="absolute top-2 right-2 bg-green-500 text-white rounded-full p-1">
+                          <Check size={16} />
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 p-3">
                       <div className="flex justify-between items-start">
@@ -229,21 +341,42 @@ const UploadComponent: React.FC<UploadComponentProps> = ({ onClose, onPhotoUploa
                           <p className="text-xs text-gray-500">
                             {(fileItem.file.size / (1024 * 1024)).toFixed(2)} MB
                           </p>
+                          
+                          {fileItem.status === 'uploading' && (
+                            <div className="mt-1">
+                              <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-amber-500 rounded-full transition-all duration-300"
+                                  style={{ width: `${fileItem.progress || 0}%` }}
+                                ></div>
+                              </div>
+                              <p className="text-xs text-amber-600 mt-1">Uploading... {fileItem.progress}%</p>
+                            </div>
+                          )}
+                          
+                          {fileItem.status === 'error' && fileItem.error && (
+                            <p className="text-xs text-red-600 mt-1">{fileItem.error}</p>
+                          )}
                         </div>
-                        <button 
-                          onClick={() => removeFile(fileItem.id)}
-                          className="text-red-500 hover:text-red-700 p-1"
-                          aria-label="Remove file"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        {!isUploading && (
+                          <button 
+                            onClick={() => removeFile(fileItem.id)}
+                            className="text-red-500 hover:text-red-700 p-1"
+                            aria-label="Remove file"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
                       </div>
-                      <textarea
-                        value={fileItem.comment}
-                        onChange={(e) => updateComment(fileItem.id, e.target.value)}
-                        placeholder="Add a comment (optional)"
-                        className="w-full mt-2 p-2 border border-gray-200 rounded text-sm h-16 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      />
+                      {!isUploading && (
+                        <textarea
+                          value={fileItem.comment}
+                          onChange={(e) => updateComment(fileItem.id, e.target.value)}
+                          placeholder="Add a comment (optional)"
+                          className="w-full mt-2 p-2 border border-gray-200 rounded text-sm h-16 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          disabled={isUploading}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
